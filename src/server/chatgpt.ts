@@ -408,6 +408,5 @@ function fromBase64Url(text: string): Uint8Array {
 }
 
 function messageOf(error: unknown): string {
-  if (!(error instanceof Error)) return String(error);
-  return error.cause instanceof Error ? `${error.message}: ${error.cause.message}` : error.message;
+  return error instanceof Error ? error.message : String(error);
 }
