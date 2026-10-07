@@ -136,7 +136,7 @@ function PluginDetail({ plugin }: { plugin: PluginView }) {
       )}
       {plugin.tools.map((tool) => (
         <div key={tool.name} className="flex items-baseline justify-between gap-3">
-          <span className="font-mono text-[11.5px] text-ink">{tool.name}</span>
+          <span className="shrink-0 font-mono text-[11.5px] text-ink">{tool.name}</span>
           <span className="min-w-0 truncate text-[12px] text-ink-3">{tool.description}</span>
         </div>
       ))}
@@ -179,7 +179,7 @@ function PluginRow({ plugin, index, actions }: { plugin: PluginView; index: numb
           </span>
           <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{plugin.name}</span>
           <span className="text-[12.5px] text-ink-2 tabular-nums">
-            {plugin.kind === "mcp" ? `${plugin.tools.length} tools` : "skill"}
+            {plugin.kind === "mcp" ? `${plugin.tools.length} tools` : plugin.origin.type === "url" ? "from URL" : "pasted"}
           </span>
           <ValuePill tone={status.tone}>{status.label}</ValuePill>
           <NavArrowDown
@@ -242,7 +242,7 @@ function PluginRow({ plugin, index, actions }: { plugin: PluginView; index: numb
         style={{ gridTemplateRows: open ? "1fr" : "0fr", opacity: open ? 1 : 0, transitionTimingFunction: "cubic-bezier(0.23, 1, 0.32, 1)" }}
       >
         <div className="overflow-hidden">
-          <div className="mb-2.5 grid grid-cols-[24px_1fr] gap-2.5 px-2.5">
+          <div className="mb-2.5 grid grid-cols-[24px_minmax(0,1fr)] gap-2.5 px-2.5">
             <span aria-hidden className="mx-auto h-full w-px bg-line" />
             <PluginDetail plugin={plugin} />
           </div>
