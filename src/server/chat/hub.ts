@@ -3,6 +3,7 @@ import type { Connection } from "agents";
 import type { ConversationInfo, Outcome, SendInput, SessionId } from "../../shared/protocol";
 import { ROOT_SESSION_ID } from "../../shared/protocol";
 import type { UserAgent, ViewerState } from "../agent";
+import { CHATGPT_PROVIDER } from "../chatgpt";
 import { Transcript } from "./transcript";
 
 type Watch = { readonly transcript: Transcript; readonly stream: AgentEventStream };
@@ -31,11 +32,8 @@ export class ChatHub {
     )`;
     this.agent.sql`INSERT OR IGNORE INTO conversations (id, title, model, updated_at)
       VALUES (${ROOT_SESSION_ID}, '', '', ${Date.now()})`;
-    const model = this.agent.modelId;
-    for (const row of this.agent.sql<ConversationRow>`SELECT id FROM conversations WHERE model != ${model}`) {
-      await this.agent.harness.session(row.id).setModel(this.agent.ai(model));
-      this.agent.sql`UPDATE conversations SET model = ${model} WHERE id = ${row.id}`;
-    }
+    const model = this.agent.chatgpt.model();
+    if (model !== null) await this.applyModel(model);
     const viewed = new Set<SessionId>();
     for (const connection of this.agent.getConnections<ViewerState>()) {
       if (connection.state?.session !== undefined) viewed.add(connection.state.session);
@@ -50,7 +48,9 @@ export class ChatHub {
     const session = await this.agent.harness.sessions.create();
     const info: ConversationInfo = { id: session.id, title: "", updatedAt: Date.now() };
     this.agent.sql`INSERT INTO conversations (id, title, model, updated_at)
-      VALUES (${info.id}, '', ${this.agent.modelId}, ${info.updatedAt})`;
+      VALUES (${info.id}, '', '', ${info.updatedAt})`;
+    const model = this.agent.chatgpt.model();
+    if (model !== null) await this.applyModel(model);
     this.agent.publish();
     const opened = await this.open(connection, info.id);
     return opened.ok ? { ok: true, value: info } : opened;
@@ -70,8 +70,17 @@ export class ChatHub {
     if (session !== undefined) await this.#release(session, connection.id);
   }
 
+  /** `conversations.model` records the slug last applied to each session, so only stale sessions are touched. */
+  async applyModel(slug: string): Promise<void> {
+    for (const row of this.agent.sql<ConversationRow>`SELECT id FROM conversations WHERE model != ${slug}`) {
+      await this.agent.harness.session(row.id).setModel({ provider: CHATGPT_PROVIDER, id: slug });
+      this.agent.sql`UPDATE conversations SET model = ${slug} WHERE id = ${row.id}`;
+    }
+  }
+
   async send(input: SendInput): Promise<Outcome<{ accepted: boolean }>> {
     if (!this.#exists(input.session)) return { ok: false, error: `No conversation ${input.session}` };
+    if (this.agent.chatgpt.model() === null) return { ok: false, error: "Connect your ChatGPT plan first." };
     const text = input.text.trim();
     if (text.length === 0) return { ok: false, error: "Message is empty" };
     if (input.operationId.length === 0) return { ok: false, error: "operationId is required" };

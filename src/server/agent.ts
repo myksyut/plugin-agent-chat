@@ -2,7 +2,6 @@ import { createModels } from "@earendil-works/pi-ai/models";
 import { createRegistry, Harness } from "@earendil-works/pi-durable";
 import { Agent, callable, getCurrentAgent, type Connection, type MCPServersState } from "agents";
 import { PiHarness } from "agents/harness/pi";
-import { createAI } from "agents/models/pi-ai";
 import type {
   Added,
   AppState,
@@ -13,32 +12,32 @@ import type {
   SessionId,
 } from "../shared/protocol";
 import { ChatHub } from "./chat/hub";
+import { CHATGPT_PROVIDER, ChatGPTLink, DEFAULT_MODEL } from "./chatgpt";
 import { PluginBook } from "./plugins/book";
 
 export type ViewerState = { readonly session: SessionId };
 
 export class UserAgent extends Agent<Env, AppState> {
-  initialState: AppState = { plugins: [], conversations: [], model: "" };
+  initialState: AppState = { plugins: [], conversations: [], chatgpt: { state: "disconnected" } };
 
-  readonly modelId: string = this.env.MODEL_ID;
-  readonly ai = createAI({ binding: this.env.AI });
   readonly registry = createRegistry();
   readonly book = new PluginBook(this, () => super.getMcpServers());
   readonly hub = new ChatHub(this);
+  readonly chatgpt = new ChatGPTLink(this, (slug) => this.hub.applyModel(slug));
 
   readonly harness = new PiHarness({
     harness: async ({ storage, context }) => {
       // Every plugin must be in the registry before pi resumes, or resumed tool tasks fail.
       await this.book.installAll();
-      const models = createModels();
-      models.setProvider(this.ai.provider);
+      const models = createModels({ credentials: this.chatgpt.credentials });
+      models.setProvider(this.chatgpt.provider);
       return Harness.open(
         storage,
         { models, registry: this.registry, onReport: (error) => console.error("pi extension failure", error) },
         context,
       );
     },
-    defaults: { model: this.ai(this.modelId) },
+    defaults: { model: { provider: CHATGPT_PROVIDER, id: DEFAULT_MODEL } },
   });
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -67,7 +66,7 @@ export class UserAgent extends Agent<Env, AppState> {
   }
 
   publish(): void {
-    this.setState({ plugins: this.book.views(), conversations: this.hub.conversations(), model: this.modelId });
+    this.setState({ plugins: this.book.views(), conversations: this.hub.conversations(), chatgpt: this.chatgpt.view() });
   }
 
   @callable()
@@ -108,6 +107,39 @@ export class UserAgent extends Agent<Env, AppState> {
   @callable()
   refreshPlugin(id: string): Promise<Outcome<Added>> {
     return this.book.refresh(id);
+  }
+
+  @callable()
+  connectChatGPT(): Promise<Outcome<{ authorizeUrl: string }>> {
+    return this.#published(this.chatgpt.begin());
+  }
+
+  @callable()
+  completeChatGPT(callbackUrl: string): Promise<Outcome<null>> {
+    return this.#published(this.chatgpt.complete(callbackUrl));
+  }
+
+  @callable()
+  disconnectChatGPT(): Promise<Outcome<null>> {
+    return this.#published(this.chatgpt.disconnect());
+  }
+
+  @callable()
+  setModel(slug: string): Promise<Outcome<null>> {
+    return this.#published(this.chatgpt.setModel(slug));
+  }
+
+  /** Test seam for the smoke script; never echoes the credential. */
+  @callable()
+  async importChatGPTCredential(credential: unknown): Promise<Outcome<null>> {
+    if (this.env.AUTH_MODE !== "dev") return { ok: false, error: "Importing a credential is only allowed in dev mode." };
+    return this.#published(this.chatgpt.import(credential));
+  }
+
+  async #published<T>(operation: Promise<Outcome<T>>): Promise<Outcome<T>> {
+    const outcome = await operation;
+    this.publish();
+    return outcome;
   }
 }
 

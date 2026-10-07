@@ -135,10 +135,25 @@ export type ConversationInfo = {
   readonly updatedAt: number;
 };
 
+/**
+ * The user's ChatGPT plan connection, which runs every model call. `connecting` holds the authorize URL
+ * the user opens; after consent the browser lands on a 127.0.0.1 URL that the user pastes back.
+ */
+export type ChatGPTState =
+  | { readonly state: "disconnected" }
+  | { readonly state: "connecting"; readonly authorizeUrl: string }
+  | {
+      readonly state: "connected";
+      readonly email: string | null;
+      /** Model slugs the plan allows, from GET /v1/models. */
+      readonly models: readonly string[];
+      readonly model: string;
+    };
+
 export type AppState = {
   readonly plugins: readonly PluginView[];
   readonly conversations: readonly ConversationInfo[];
-  readonly model: string;
+  readonly chatgpt: ChatGPTState;
 };
 
 export type Me = { readonly agentName: string; readonly email: string | null };
