@@ -12,8 +12,8 @@
   "vars": {
     "MODEL_ID": "@cf/zai-org/glm-4.7-flash",
     "AUTH_MODE": "access",
-    "ACCESS_TEAM_DOMAIN": "",
-    "ACCESS_AUD": ""
+    "ACCESS_TEAM_DOMAIN": "myksyut.cloudflareaccess.com",
+    "ACCESS_AUD": "5d451ac789073184cf05f255a9d047ddc98a3e78f0cfb7d645b81df384308c14"
   },
   "durable_objects": {
     "bindings": [{ "name": "UserAgent", "class_name": "UserAgent" }]
