@@ -34,7 +34,11 @@ export class UserAgent extends Agent<Env, AppState> {
       await this.book.installAll();
       const models = createModels();
       models.setProvider(this.ai.provider);
-      return Harness.open(storage, { models, registry: this.registry }, context);
+      return Harness.open(
+        storage,
+        { models, registry: this.registry, onReport: (error) => console.error("pi extension failure", error) },
+        context,
+      );
     },
     defaults: { model: this.ai(this.modelId) },
   });
