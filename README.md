@@ -4,14 +4,14 @@
 
 ## 構成
 
-ユーザー 1 人につき `UserAgent` Durable Object が 1 つあります。プラグイン、会話履歴、MCP 接続、OAuth トークンはすべてその Durable Object の SQLite に入ります。
+ユーザー 1 人につき `UserAgent` Durable Object が 1 つあります。プラグイン、会話履歴、MCP 接続、OAuth トークン、ChatGPT の接続情報はすべてその Durable Object の SQLite に入ります。
 
 ```mermaid
 flowchart LR
   B[Browser<br/>React + useAgent] -- WebSocket --> W[Worker<br/>Hono + routeAgentRequest]
   W -- Access JWT で本人確認 --> DO[UserAgent<br/>Durable Object]
   DO --> PI[PiHarness<br/>pi-durable]
-  PI --> AI[Workers AI]
+  PI --> AI[OpenAI Responses API<br/>ChatGPT プラン]
   DO --> BOOK[PluginBook]
   BOOK -- registry.install --> PI
   BOOK --> MCP[Agents SDK MCP client]
@@ -21,6 +21,7 @@ flowchart LR
 ```
 
 - `src/server/agent.ts` は Durable Object 本体です。`@callable` メソッドがブラウザからの操作口になります。
+- `src/server/chatgpt.ts` は Sign in with ChatGPT による接続、トークンの保存と更新、モデルの選択を持ちます。
 - `src/server/plugins/book.ts` はプラグインの保存と、有効なプラグインを pi の registry に反映する処理を持ちます。MCP のツール一覧はキャッシュするので、コールドスタート直後でもネットワークを待たずにツールが揃います。
 - `src/server/chat/transcript.ts` は pi のイベントを画面用の `Turn` に畳み込む純粋な reducer です。
 - `src/shared/protocol.ts` はブラウザとサーバーの契約です。pi や SDK の型はここに出しません。
@@ -28,7 +29,7 @@ flowchart LR
 
 ## ローカルで動かす
 
-Workers AI のバインディングはローカルで再現できないので、開発中も Cloudflare 上のモデルを呼びます。少額の利用料がかかります。
+モデル呼び出しはすべて、ユーザーが接続した ChatGPT プランで動きます (Sign in with ChatGPT)。開発中も OpenAI の API を呼ぶので、プランの利用枠を消費します。
 
 1. 依存を入れます。
 
@@ -42,13 +43,7 @@ Workers AI のバインディングはローカルで再現できないので、
    cp .dev.vars.example .dev.vars
    ```
 
-3. Cloudflare にログインします。
-
-   ```sh
-   npx wrangler login
-   ```
-
-4. 開発サーバーを起動して `http://localhost:5173` を開きます。
+3. 開発サーバーを起動して `http://localhost:5173` を開き、ChatGPT を接続します ([ChatGPT を接続する](#chatgpt-を接続する))。
 
    ```sh
    pnpm dev
@@ -68,7 +63,13 @@ Workers AI のバインディングはローカルで再現できないので、
    pnpm run deploy
    ```
 
-既定のモデルは `@cf/zai-org/glm-4.7-flash` です。Workers Free プランで tool calling ができることを確認しています。有料プランで別のモデルを使うときは `MODEL_ID` を変えます。既存の会話も次の起動時に新しいモデルへ切り替わります。
+## ChatGPT を接続する
+
+初めて開くとチャット欄に **Connect ChatGPT** が出ます。押すと **Open ChatGPT sign-in** のリンクが出るので、別タブで開いて承認します。承認後のタブは `http://127.0.0.1:1455/auth/callback?...` に移って接続エラーになります。そのタブのアドレスをコピーしてカードに貼り、**Finish** を押します。
+
+接続すると、プランで使えるモデルのうち pi が扱えるものがチャット欄のモデル選択に並びます。既定は `gpt-5.6-luna` で、プランに無ければ一覧の先頭を使います。選んだモデルはすべての会話に反映されます。サイドバー下部の **Disconnect** で接続を解除できます。
+
+アクセストークンは 1 時間で切れ、期限の 5 分前から次のモデル呼び出しで更新します。リフレッシュトークンは更新のたびに替わるので、新しいものを Durable Object に保存します。トークンはブラウザには送りません。
 
 ## プラグインを追加する
 
@@ -89,16 +90,18 @@ pnpm typecheck
 pnpm build
 ```
 
-`scripts/smoke.mjs` は起動中の開発サーバーに対して、プラグインの登録、MCP ツールの実行、スキルの読み込み、ヘッダー値とURLクエリがブラウザ向けフレームに出ないことを確かめます。開発サーバーを再起動したあとに `--after-restart` を付けて流すと、プラグインと履歴がコールドスタートを越えて残ることを確かめます。
+`scripts/smoke.mjs` は起動中の開発サーバーに対して、ChatGPT プランの接続、プラグインの登録、MCP ツールの実行、スキルの読み込み、ヘッダー値・URL クエリ・ChatGPT のトークンがブラウザ向けフレームに出ないことを確かめます。開発サーバーを再起動したあとに `--after-restart` を付けて流すと、ChatGPT の接続、プラグイン、履歴がコールドスタートを越えて残ることを確かめます。
+
+まだ接続していない Durable Object に対しては、`SMOKE_CHATGPT_CRED` に資格情報ファイル (`{clientId, access, refresh, expires, scope}` の JSON) のパスを渡すと、`importChatGPTCredential` で取り込んでから進みます。この取り込みは `AUTH_MODE=dev` でだけ使えます。リフレッシュトークンは使い捨てなので、同じファイルを取り込むのは 1 回だけにしてください。
 
 ```sh
-HOST=127.0.0.1:5173 node scripts/smoke.mjs
-HOST=127.0.0.1:5173 node scripts/smoke.mjs --after-restart
+HOST=127.0.0.1:5173 SMOKE_CHATGPT_CRED=/path/to/cred.json node scripts/smoke.mjs
+HOST=127.0.0.1:5173 SMOKE_CHATGPT_CRED=/path/to/cred.json node scripts/smoke.mjs --after-restart
 ```
 
 ## 制約
 
-- MCP のヘッダー値と OAuth トークンは、Agents SDK が Durable Object の SQLite に平文で保存します。暗号化はしていません。
+- MCP のヘッダー値と OAuth トークンは、Agents SDK が Durable Object の SQLite に平文で保存します。ChatGPT のトークンも同じ SQLite に平文で保存します。暗号化はしていません。
 - スキルは `SKILL.md` 本文だけを扱います。`references/` や `scripts/` などの付属ファイルは読み込みません。
 - ツール実行前の承認フローはありません。
 - MCP のツール呼び出しはクラッシュ後に再実行しません。中断されたツールはエラーとしてモデルに返ります。
