@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Me, PluginView } from "../shared/protocol";
 import { Composer } from "./ui/Composer";
+import { ConnectChatGPT } from "./ui/ConnectChatGPT";
 import { PluginsPanel } from "./ui/PluginsPanel";
 import { RunIndicator } from "./ui/RunIndicator";
 import { Shell } from "./ui/Shell";
@@ -53,6 +54,8 @@ function Workspace({ me }: { me: Me }) {
   if (workspace.status === "connecting") return <Centered>Connecting…</Centered>;
 
   const { state, session, chat, panel, online, actions } = workspace;
+  const chatgpt = state.chatgpt;
+  const connect = chatgpt.state === "connected" ? null : <ConnectChatGPT chatgpt={chatgpt} actions={actions} />;
 
   return (
     <Shell
@@ -63,6 +66,7 @@ function Workspace({ me }: { me: Me }) {
           panel={panel}
           pluginCount={state.plugins.length}
           email={me.email}
+          chatgpt={chatgpt}
           onNew={async () => {
             setSendError(null);
             const result = await actions.newConversation();
@@ -73,6 +77,7 @@ function Workspace({ me }: { me: Me }) {
             void actions.open(id);
           }}
           onPanel={actions.showPanel}
+          onDisconnect={actions.disconnectChatGPT}
         />
       }
     >
@@ -85,8 +90,9 @@ function Workspace({ me }: { me: Me }) {
         <PluginsPanel plugins={state.plugins} actions={actions} />
       ) : (
         <>
-          <Transcript view={chat} />
+          <Transcript view={chat} empty={connect && <div className="py-10">{connect}</div>} />
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 pb-3">
+            {connect !== null && chat !== null && chat.turns.length > 0 && connect}
             <RunIndicator run={chat?.run} />
             {chat !== null && chat.queued > 0 && (
               <span className="text-[12px] text-ink-3">{chat.queued} queued</span>
@@ -101,6 +107,20 @@ function Workspace({ me }: { me: Me }) {
             skills={enabledSkills(state.plugins)}
             plugins={state.plugins}
             run={chat?.run}
+            disabled={chatgpt.state !== "connected"}
+            model={
+              chatgpt.state === "connected"
+                ? {
+                    models: chatgpt.models,
+                    current: chatgpt.model,
+                    pick: async (slug) => {
+                      setSendError(null);
+                      const result = await actions.setModel(slug);
+                      if (!result.ok) setSendError(result.error);
+                    },
+                  }
+                : null
+            }
             onSend={async (text) => {
               setSendError(null);
               const result = await actions.send(text);

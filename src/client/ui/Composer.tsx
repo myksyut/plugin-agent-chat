@@ -1,7 +1,8 @@
-import { ArrowUp, Square } from "iconoir-react";
+import { ArrowUp, Check, NavArrowDown, Square } from "iconoir-react";
 import { ACCENTS, accentChain, createShader, playSweep } from "glimm";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { PluginView, RunStatus } from "../../shared/protocol";
+import { GlideMenu } from "./GlideMenu";
 
 const RAINBOW = accentChain([
   ACCENTS.red,
@@ -42,10 +43,76 @@ function pluginHint(plugin: PluginView): string {
   return state === "authenticating" ? "Needs authorization" : state;
 }
 
+export type ModelChoice = {
+  readonly models: readonly string[];
+  readonly current: string;
+  pick(slug: string): void;
+};
+
+function ModelMenu({
+  choice,
+  trigger,
+  onClose,
+}: {
+  choice: ModelChoice;
+  trigger: RefObject<HTMLButtonElement | null>;
+  onClose(): void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const away = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!ref.current?.contains(target) && !trigger.current?.contains(target)) onClose();
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [trigger, onClose]);
+
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      aria-label="Model"
+      className="absolute bottom-full left-0 z-10 mb-2 min-w-48 rounded-[10px] bg-surface p-1 shadow-raised"
+      style={{ animation: "pop-in 180ms cubic-bezier(0.23,1,0.32,1) both", transformOrigin: "bottom left" }}
+    >
+      <GlideMenu highlightClassName="inset-x-0 rounded-[6px] bg-hover">
+        {choice.models.map((slug) => (
+          <button
+            key={slug}
+            data-menu-row
+            type="button"
+            role="menuitemradio"
+            aria-checked={slug === choice.current}
+            onClick={() => {
+              onClose();
+              if (slug !== choice.current) choice.pick(slug);
+            }}
+            className="relative z-10 flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-left text-[12.5px] font-medium text-ink"
+          >
+            <span className="min-w-0 flex-1 truncate">{slug}</span>
+            {slug === choice.current && <Check width={14} height={14} strokeWidth={2.4} className="shrink-0 text-ink-2" />}
+          </button>
+        ))}
+      </GlideMenu>
+    </div>
+  );
+}
+
 export function Composer({
   skills,
   plugins,
   run,
+  disabled,
+  model,
   onSend,
   onStop,
   onTogglePlugin,
@@ -53,6 +120,8 @@ export function Composer({
   skills: readonly { name: string; description: string }[];
   plugins: readonly PluginView[];
   run: RunStatus | undefined;
+  disabled: boolean;
+  model: ModelChoice | null;
   onSend(text: string): void;
   onStop(): void;
   onTogglePlugin(id: string, enabled: boolean): void;
@@ -62,6 +131,8 @@ export function Composer({
   const [active, setActive] = useState(0);
   const [rowBox, setRowBox] = useState<{ top: number; height: number } | null>(null);
   const [engaged, setEngaged] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
+  const modelTrigger = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const rowRefs = useRef<(HTMLElement | null)[]>([]);
   const glimmRef = useRef<HTMLCanvasElement>(null);
@@ -158,7 +229,7 @@ export function Composer({
     inputRef.current?.focus();
   };
 
-  const canSend = draft.trim().length > 0 && !busy;
+  const canSend = draft.trim().length > 0 && !busy && !disabled;
   const send = () => {
     if (!canSend) return;
     sweep();
@@ -248,6 +319,9 @@ export function Composer({
             </div>
           </div>
         )}
+        {model && modelOpen && !token && (
+          <ModelMenu choice={model} trigger={modelTrigger} onClose={() => setModelOpen(false)} />
+        )}
 
         <div className="relative isolate flex flex-col gap-2.5 overflow-hidden rounded-[22px] border border-line bg-surface p-3.5 shadow-card transition-[border-color] duration-150 focus-within:border-line-strong">
           <canvas
@@ -256,42 +330,64 @@ export function Composer({
             className="pointer-events-none absolute inset-0 -z-10 h-full w-full"
             style={{ borderRadius: "inherit" }}
           />
-          <div className="flex items-end gap-2">
-            <textarea
-              ref={inputRef}
-              rows={1}
-              value={draft}
-              onChange={(event) => {
-                setDraft(event.target.value);
-                setDismissed(false);
-              }}
-              onKeyDown={(event) => {
-                if (token && rows.length > 0) {
-                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                    event.preventDefault();
-                    setEngaged(true);
-                    setActive((current) => (current + (event.key === "ArrowDown" ? 1 : rows.length - 1)) % rows.length);
-                    return;
-                  }
-                  if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
-                    event.preventDefault();
-                    pick(rows[active]);
-                    return;
-                  }
-                }
-                if (event.key === "Escape") {
-                  setDismissed(true);
+          <textarea
+            ref={inputRef}
+            rows={1}
+            value={draft}
+            disabled={disabled}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setDismissed(false);
+            }}
+            onKeyDown={(event) => {
+              if (token && rows.length > 0) {
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setEngaged(true);
+                  setActive((current) => (current + (event.key === "ArrowDown" ? 1 : rows.length - 1)) % rows.length);
                   return;
                 }
-                if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
                   event.preventDefault();
-                  send();
+                  pick(rows[active]);
+                  return;
                 }
-              }}
-              placeholder="Message the agent. / for skills, @ for plugins"
-              aria-label="Prompt"
-              className="min-h-10 min-w-0 flex-1 resize-none bg-transparent px-2 py-2 text-[14px] leading-5 text-ink outline-none [overflow-wrap:anywhere] placeholder:text-ink-3"
-            />
+              }
+              if (event.key === "Escape") {
+                setDismissed(true);
+                return;
+              }
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                send();
+              }
+            }}
+            placeholder={disabled ? "Connect ChatGPT to start" : "Message the agent. / for skills, @ for plugins"}
+            aria-label="Prompt"
+            className="min-h-10 min-w-0 resize-none bg-transparent px-2 py-2 text-[14px] leading-5 text-ink outline-none [overflow-wrap:anywhere] placeholder:text-ink-3 disabled:cursor-not-allowed"
+          />
+          <div className="flex items-center justify-between gap-2">
+            {model ? (
+              <button
+                ref={modelTrigger}
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={modelOpen}
+                onClick={() => setModelOpen(!modelOpen)}
+                className="flex h-7 items-center gap-1 rounded-full px-2.5 text-[12.5px] font-medium text-ink-2 transition-[background-color,color,transform] duration-150 hover:bg-hover hover:text-ink active:scale-[0.96]"
+              >
+                {model.current}
+                <NavArrowDown
+                  width={13}
+                  height={13}
+                  strokeWidth={2.2}
+                  className="transition-transform duration-200"
+                  style={{ transform: modelOpen ? "rotate(180deg)" : "rotate(0)" }}
+                />
+              </button>
+            ) : (
+              <span />
+            )}
             {busy ? (
               <button
                 type="button"

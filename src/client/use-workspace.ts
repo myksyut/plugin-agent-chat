@@ -26,6 +26,10 @@ export type WorkspaceActions = {
   setPluginEnabled(id: string, enabled: boolean): Promise<Outcome<null>>;
   removePlugin(id: string): Promise<Outcome<null>>;
   refreshPlugin(id: string): Promise<Outcome<Added>>;
+  connectChatGPT(): Promise<Outcome<{ authorizeUrl: string }>>;
+  completeChatGPT(callbackUrl: string): Promise<Outcome<null>>;
+  disconnectChatGPT(): Promise<Outcome<null>>;
+  setModel(slug: string): Promise<Outcome<null>>;
   showPanel(panel: Panel): void;
 };
 
@@ -143,6 +147,10 @@ export function useWorkspace(me: Me): Workspace {
       setPluginEnabled: (id, enabled) => invoke<null>("setPluginEnabled", [id, enabled]),
       removePlugin: (id) => invoke<null>("removePlugin", [id]),
       refreshPlugin: (id) => invoke<Added>("refreshPlugin", [id]),
+      connectChatGPT: () => invoke<{ authorizeUrl: string }>("connectChatGPT", []),
+      completeChatGPT: (callbackUrl) => invoke<null>("completeChatGPT", [callbackUrl]),
+      disconnectChatGPT: () => invoke<null>("disconnectChatGPT", []),
+      setModel: (slug) => invoke<null>("setModel", [slug]),
       showPanel: setPanel,
     }),
     [invoke, openSession],

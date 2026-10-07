@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
 import { Streamdown } from "streamdown";
 import type { ChatView, Part, ToolCallView, Turn } from "../../shared/protocol";
 import { ThinkingTrace } from "./ThinkingTrace";
@@ -78,7 +78,7 @@ function TurnView({ turn }: { turn: Turn }) {
 
 const STICK_THRESHOLD_PX = 48;
 
-export function Transcript({ view }: { view: ChatView | null }) {
+export function Transcript({ view, empty }: { view: ChatView | null; empty?: ReactNode }) {
   const scroller = useRef<HTMLDivElement>(null);
   const stuck = useRef(true);
 
@@ -104,7 +104,7 @@ export function Transcript({ view }: { view: ChatView | null }) {
         {view === null ? (
           <p className="py-16 text-center text-[13px] text-ink-3">Loading conversation…</p>
         ) : view.turns.length === 0 ? (
-          <p className="py-16 text-center text-[13px] text-ink-3">Ask anything. Add plugins to give the agent tools and skills.</p>
+          (empty ?? <p className="py-16 text-center text-[13px] text-ink-3">Ask anything. Add plugins to give the agent tools and skills.</p>)
         ) : (
           view.turns.map((turn) => <TurnView key={turn.id} turn={turn} />)
         )}

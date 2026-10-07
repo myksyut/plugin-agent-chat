@@ -252,7 +252,7 @@ function PluginRow({ plugin, index, actions }: { plugin: PluginView; index: numb
   );
 }
 
-const fieldClass =
+export const fieldClass =
   "h-8 w-full min-w-0 rounded-control bg-field px-2.5 text-[13px] text-ink shadow-hairline outline-none placeholder:text-ink-3 focus:shadow-[0_0_0_1px_var(--line-strong)]";
 
 type HeaderRow = { readonly key: number; readonly name: string; readonly value: string };

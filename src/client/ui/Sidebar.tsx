@@ -9,8 +9,9 @@ import {
   Xmark,
 } from "iconoir-react";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import type { ConversationInfo } from "../../shared/protocol";
+import type { ChatGPTState, ConversationInfo, Outcome } from "../../shared/protocol";
 import type { Panel } from "../use-workspace";
+import { Button } from "./Button";
 import { GlideMenu } from "./GlideMenu";
 
 const SIDEBAR_MOTION = {
@@ -78,24 +79,80 @@ function RailButton({
   );
 }
 
+function ChatGPTLine({ email, onDisconnect }: { email: string | null; onDisconnect(): Promise<Outcome<null>> }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const label = `ChatGPT · ${email ?? "connected"}`;
+
+  return (
+    <div className="flex flex-col gap-1.5 px-2">
+      <div className="flex h-7 items-center gap-2">
+        <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-3" title={label}>
+          {label}
+        </span>
+        {confirming ? (
+          <span className="flex shrink-0 items-center gap-1">
+            <Button size="xs" variant="ghost" onClick={() => setConfirming(false)}>
+              Keep
+            </Button>
+            <Button
+              size="xs"
+              variant="primary"
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true);
+                setError(null);
+                const result = await onDisconnect();
+                setBusy(false);
+                setConfirming(false);
+                if (!result.ok) setError(result.error);
+              }}
+            >
+              Disconnect
+            </Button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConfirming(true)}
+            className="shrink-0 rounded-full px-1.5 text-[12px] font-medium text-ink-3 transition-colors duration-100 hover:text-red"
+          >
+            Disconnect
+          </button>
+        )}
+      </div>
+      {error && (
+        <p role="alert" className="rounded-control bg-red-tint px-2 py-1 text-[12px] text-red [overflow-wrap:anywhere]">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function Sidebar({
   conversations,
   active,
   panel,
   pluginCount,
   email,
+  chatgpt,
   onNew,
   onPick,
   onPanel,
+  onDisconnect,
 }: {
   conversations: readonly ConversationInfo[];
   active: string;
   panel: Panel;
   pluginCount: number;
   email: string | null;
+  chatgpt: ChatGPTState;
   onNew(): void;
   onPick(id: string): void;
   onPanel(panel: Panel): void;
+  onDisconnect(): Promise<Outcome<null>>;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -267,11 +324,14 @@ export function Sidebar({
           </GlideGroup>
         </div>
 
-        {email && (
-          <div className="sidebar-copy mx-2 mt-3 mb-3 w-[208px] border-t border-line pt-3">
-            <span className="block truncate px-2 text-[12.5px] text-ink-3" title={email}>
-              {email}
-            </span>
+        {(email || chatgpt.state === "connected") && (
+          <div className="sidebar-copy mx-2 mt-3 mb-3 flex w-[208px] flex-col gap-1 border-t border-line pt-3">
+            {chatgpt.state === "connected" && <ChatGPTLine email={chatgpt.email} onDisconnect={onDisconnect} />}
+            {email && (
+              <span className="block truncate px-2 text-[12.5px] text-ink-3" title={email}>
+                {email}
+              </span>
+            )}
           </div>
         )}
       </div>
