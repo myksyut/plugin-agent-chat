@@ -1,0 +1,59 @@
+@import "./foundation.css";
+@import "./sidebar-nav.css";
+
+/* Tailwind scans sources by path; streamdown ships its utility classes inside dist. */
+@source "../../node_modules/streamdown/dist/*.js";
+
+/* Streamdown expects shadcn-style tokens; map them onto the Beautiful UI ones. */
+:root {
+  --background: var(--surface);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --muted: var(--field);
+  --muted-foreground: var(--ink-2);
+  --border: var(--line-strong);
+  --input: var(--line-strong);
+  --primary: var(--ink);
+  --primary-foreground: var(--surface);
+  --sidebar: var(--inset);
+  --radius: 0.625rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-sidebar: var(--sidebar);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+}
+
+.prose-chat {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.prose-chat > :first-child {
+  margin-top: 0;
+}
+
+.prose-chat > :last-child {
+  margin-bottom: 0;
+}
