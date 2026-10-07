@@ -44,6 +44,7 @@ let state;
 let view = null;
 const client = new AgentClient({
   host,
+  protocol: "ws",
   agent: "UserAgent",
   name: me.agentName,
   onStateUpdate: (s) => (state = s),
