@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-/** Sidebar on the striped canvas, content in one raised pane. */
 export function Shell({ sidebar, children }: { sidebar: ReactNode; children: ReactNode }) {
   return (
     <div className="flex h-full">

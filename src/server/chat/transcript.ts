@@ -1,5 +1,3 @@
-// The only code that knows pi's entry and event semantics. Deterministic, no I/O.
-// Mutable inside; observable only through frame().
 import type { AssistantMessage, JsonObject, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import type { AgentEvent, EntryRecord, MessageChange, SnapshotEvent } from "@earendil-works/pi-durable";
 import type { ChatFrame, Part, RunStatus, SessionId, ToolCallView, ToolStatus, Turn } from "../../shared/protocol";
@@ -9,6 +7,9 @@ export type ToolLabeler = (modelName: string) => { readonly plugin: string | nul
 type Block = AssistantMessage["content"][number];
 type CallState = { readonly status: ToolStatus; readonly output: string };
 
+/** First turn index the browser must replace: pass it to `Transcript.frame`. */
+export type FrameStart = number;
+
 const MAX_ARGS = 2048;
 const MAX_OUTPUT = 4096;
 
@@ -17,14 +18,11 @@ export class Transcript {
   #run: RunStatus = { phase: "idle" };
   #since = 0;
   #queued = 0;
-  /** Entry ids already folded: at-most-once folding makes overlapping delivery idempotent. */
   #seen = new Set<number>();
-  /** toolCallId → [turnIndex, partIndex] */
-  #toolIndex = new Map<string, readonly [number, number]>();
+  #toolIndex = new Map<string, readonly [turn: number, part: number]>();
   #calls = new Map<string, CallState>();
   #live: { readonly index: number; blocks: Block[] } | null = null;
-  /** Lowest turn index changed by the batch being applied. */
-  #dirty: number | null = null;
+  #lowestChangedTurn: number | null = null;
 
   private constructor(
     readonly session: SessionId,
@@ -37,9 +35,8 @@ export class Transcript {
     return transcript;
   }
 
-  /** Fold one commit batch. Returns the lowest turn index changed, or null when nothing visible changed. */
-  apply(events: readonly AgentEvent[]): number | null {
-    this.#dirty = null;
+  apply(events: readonly AgentEvent[]): FrameStart | null {
+    this.#lowestChangedTurn = null;
     let statusChanged = false;
     for (const event of events) {
       switch (event.type) {
@@ -99,7 +96,7 @@ export class Transcript {
           break;
       }
     }
-    return this.#dirty ?? (statusChanged ? this.#turns.length : null);
+    return this.#lowestChangedTurn ?? (statusChanged ? this.#turns.length : null);
   }
 
   frame(from: number): ChatFrame {
@@ -297,7 +294,6 @@ export class Transcript {
     this.#touch(turnIndex);
   }
 
-  /** A call that ended without a result entry: faulted, orphaned, or cut off by the end of its run. */
   #failCall(callId: string): void {
     const state = this.#calls.get(callId);
     if (state?.status === "done" || state?.status === "error") return;
@@ -305,7 +301,7 @@ export class Transcript {
   }
 
   #touch(index: number): void {
-    this.#dirty = this.#dirty === null ? index : Math.min(this.#dirty, index);
+    this.#lowestChangedTurn = this.#lowestChangedTurn === null ? index : Math.min(this.#lowestChangedTurn, index);
   }
 }
 
@@ -319,7 +315,6 @@ function resultText(message: ToolResultMessage): string {
   return message.content.map((part) => (part.type === "text" ? part.text : "[image]")).join("\n");
 }
 
-/** Streamed tool-call arguments arrive as string appends at a path inside `arguments`. */
 function appendAtPath(args: JsonObject, path: readonly (string | number)[], delta: string): void {
   if (path.length === 0) return;
   let node: Record<string | number, unknown> = args;

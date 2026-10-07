@@ -1,4 +1,3 @@
-// Conversations, viewers, and live watches for one user.
 import type { AgentEventStream } from "@earendil-works/pi-durable";
 import type { Connection } from "agents";
 import type { ConversationInfo, Outcome, SendInput, SessionId } from "../../shared/protocol";
@@ -12,12 +11,7 @@ type ConversationRow = { id: string; title: string; model: string; updated_at: n
 
 const TITLE_LENGTH = 60;
 
-/**
- * Table `conversations` lists the user-visible pi sessions and the model last applied to each.
- * pi's sessions.list() is not used: it includes subagent conversations.
- */
 export class ChatHub {
-  /** Single-flight per session: concurrent opens share one events() stream. */
   #watches = new Map<SessionId, Promise<Watch>>();
 
   constructor(private readonly agent: UserAgent) {}
@@ -28,7 +22,6 @@ export class ChatHub {
     );
   }
 
-  /** Runs on every isolate start: tables, model migration, then re-attach watches for connected viewers. */
   async resume(): Promise<void> {
     this.agent.sql`CREATE TABLE IF NOT EXISTS conversations (
       id TEXT PRIMARY KEY,
@@ -53,24 +46,21 @@ export class ChatHub {
     }
   }
 
-  async create(connection: Connection<ViewerState>): Promise<ConversationInfo> {
+  async create(connection: Connection<ViewerState>): Promise<Outcome<ConversationInfo>> {
     const session = await this.agent.harness.sessions.create();
     const info: ConversationInfo = { id: session.id, title: "", updatedAt: Date.now() };
     this.agent.sql`INSERT INTO conversations (id, title, model, updated_at)
       VALUES (${info.id}, '', ${this.agent.modelId}, ${info.updatedAt})`;
     this.agent.publish();
-    await this.open(connection, info.id);
-    return info;
+    const opened = await this.open(connection, info.id);
+    return opened.ok ? { ok: true, value: info } : opened;
   }
 
-  /** Makes `connection` a viewer of `session` only, and sends it a full frame. */
   async open(connection: Connection<ViewerState>, session: SessionId): Promise<Outcome<null>> {
     if (!this.#exists(session)) return { ok: false, error: `No conversation ${session}` };
     const previous = connection.state?.session;
     const watch = await this.#ensureWatch(session);
-    // No await between becoming a viewer and the full frame: tail frames can only follow it.
-    connection.setState({ session });
-    connection.send(JSON.stringify(watch.transcript.frame(0)));
+    this.#becomeViewer(connection, session, watch);
     if (previous !== undefined && previous !== session) await this.#release(previous);
     return { ok: true, value: null };
   }
@@ -103,6 +93,11 @@ export class ChatHub {
     return this.agent.harness.session(session).abort();
   }
 
+  #becomeViewer(connection: Connection<ViewerState>, session: SessionId, watch: Watch): void {
+    connection.setState({ session });
+    connection.send(JSON.stringify(watch.transcript.frame(0)));
+  }
+
   #exists(session: SessionId): boolean {
     return this.agent.sql`SELECT 1 FROM conversations WHERE id = ${session}`.length > 0;
   }
@@ -129,7 +124,6 @@ export class ChatHub {
     return opening;
   }
 
-  /** Stops the session's stream when no viewer other than `leaving` remains. */
   async #release(session: SessionId, leaving?: string): Promise<void> {
     for (const connection of this.agent.getConnections<ViewerState>()) {
       if (connection.id !== leaving && connection.state?.session === session) return;

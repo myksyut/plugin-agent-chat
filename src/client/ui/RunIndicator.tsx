@@ -56,7 +56,6 @@ function Indicator({ label, startedAt }: { label: string; startedAt: number }) {
   );
 }
 
-/** Pixel-grid loader with a shimmering label and a live timer while the agent works. */
 export function RunIndicator({ run }: { run: RunStatus | undefined }) {
   if (run === undefined || run.phase === "idle") return null;
   return run.phase === "running" ? (

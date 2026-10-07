@@ -1,10 +1,8 @@
-// Everything about plugins: our table, the SDK MCP calls, the catalog cache, and the
-// reconciler that projects enabled plugins into the pi registry.
 import type { Extension, Registry, ToolRegistration } from "@earendil-works/pi-durable";
 import { getCurrentAgent, normalizeServerId, type MCPServersState } from "agents";
 import type { Added, McpConnection, Outcome, PluginDraft, PluginView, SkillOrigin } from "../../shared/protocol";
 import type { UserAgent } from "../agent";
-import { catalogFrom, mcpExtension, mcpExtensionName, type McpCall, type McpCatalog, type RawMcpResult } from "./mcp-tools";
+import { catalogFrom, mcpExtension, mcpExtensionName, type McpCall, type McpCatalog } from "./mcp-tools";
 import {
   fetchSkillMarkdown,
   parseSkillDoc,
@@ -14,10 +12,8 @@ import {
   type SkillDoc,
 } from "./skill-md";
 
-/** Header values are not here: they live only in the SDK's cf_agents_mcp_servers row with the same id. */
 export type McpSpec = {
-  /** origin + pathname */
-  readonly url: string;
+  readonly displayUrl: string;
   readonly headerNames: readonly string[];
 };
 export type SkillSpec = { readonly doc: SkillDoc; readonly origin: SkillOrigin };
@@ -58,7 +54,8 @@ export type Desired = ReadonlyMap<string, DesiredExtension>;
 type Installed = Map<string, { fingerprint: string; ext: Extension<ToolRegistration> }>;
 type ToolLabel = { readonly plugin: string | null; readonly tool: string };
 
-const PLUGIN_ID = /^[a-z][a-z0-9_-]{0,40}$/;
+const PLUGIN_ID_MAX_LENGTH = 41;
+const PLUGIN_ID = new RegExp(`^[a-z][a-z0-9_-]{0,${PLUGIN_ID_MAX_LENGTH - 1}}$`);
 const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const TOOL_WAIT_MS = 5000;
@@ -71,11 +68,9 @@ export class PluginBook {
 
   constructor(
     private readonly agent: UserAgent,
-    /** The SDK's real MCP state; the agent's own getMcpServers() is blanked for the browser. */
     private readonly serverStates: () => MCPServersState,
   ) {}
 
-  /** Factory path, input gate held: SQL → registry from cached catalogs. No network. */
   async installAll(): Promise<void> {
     this.agent.sql`CREATE TABLE IF NOT EXISTS plugins (
       id TEXT PRIMARY KEY,
@@ -90,11 +85,7 @@ export class PluginBook {
     await this.#apply(this.#rows());
   }
 
-  /**
-   * After the harness is open: SDK servers without a row are removed, mcp rows without an SDK
-   * server are deleted. Finishes adds and removes a crash interrupted.
-   */
-  sweep(): Promise<void> {
+  deleteOrphans(): Promise<void> {
     return this.#serial(async () => {
       const rows = new Set(this.#rows().flatMap((row) => (row.kind === "mcp" ? [row.id] : [])));
       const servers = new Set(this.agent.mcp.listServers().map((server) => server.id));
@@ -104,7 +95,6 @@ export class PluginBook {
     });
   }
 
-  /** Coalesced: at most one reconcile waits behind the running mutation. */
   reconcile(): Promise<void> {
     this.#queuedReconcile ??= this.#serial(async () => {
       this.#queuedReconcile = null;
@@ -130,7 +120,6 @@ export class PluginBook {
     }
   }
 
-  /** Flips the flag only; MCP connections stay warm. Effective from the next pi request. */
   setEnabled(id: string, enabled: boolean): Promise<Outcome<null>> {
     return this.#serial(async () => {
       if (!this.#row(id)) return { ok: false, error: `No plugin with id ${id}` };
@@ -140,7 +129,6 @@ export class PluginBook {
     });
   }
 
-  /** SDK first, then our row: a crash in between leaves a row the sweep deletes. */
   remove(id: string): Promise<Outcome<null>> {
     return this.#serial(async () => {
       const row = this.#row(id);
@@ -158,7 +146,6 @@ export class PluginBook {
     });
   }
 
-  /** skill-url: re-fetch. mcp: reconnect, rediscover, or hand out a fresh authorize URL. */
   refresh(id: string): Promise<Outcome<Added>> {
     const callbackHost = currentOrigin();
     return this.#serial(async () => {
@@ -208,7 +195,7 @@ export class PluginBook {
         id: row.id,
         name: row.name,
         enabled: row.enabled,
-        url: row.spec.url,
+        displayUrl: row.spec.displayUrl,
         headerNames: row.spec.headerNames,
         connection,
         tools: (row.catalog?.tools ?? []).map((tool) => ({ name: tool.name, description: tool.description })),
@@ -216,7 +203,6 @@ export class PluginBook {
     });
   }
 
-  /** Model-facing tool name → display labels; built-in tools such as activate_skill have no plugin. */
   labelTool(modelName: string): ToolLabel {
     return this.#labels.get(modelName) ?? { plugin: null, tool: modelName };
   }
@@ -254,23 +240,23 @@ export class PluginBook {
     }
     const id = this.#freeId(name, rows);
 
-    let authorize: string | null;
+    let authorizeUrl: string | null;
     try {
       const result = await this.agent.addMcpServer(name, url.href, {
         id,
         ...(callbackHost === undefined ? {} : { callbackHost }),
         transport: { type: "auto", ...(Object.keys(headers).length === 0 ? {} : { headers }) },
       });
-      authorize = result.state === "authenticating" ? result.authUrl : null;
+      authorizeUrl = result.state === "authenticating" ? result.authUrl : null;
     } catch (error) {
       await this.agent.removeMcpServer(id).catch(() => undefined);
       return { ok: false, error: scrubUrl(messageOf(error), url.href) };
     }
-    const spec: McpSpec = { url: `${url.origin}${url.pathname}`, headerNames: Object.keys(headers) };
+    const spec: McpSpec = { displayUrl: `${url.origin}${url.pathname}`, headerNames: Object.keys(headers) };
     this.agent.sql`INSERT INTO plugins (id, kind, name, enabled, spec, catalog, created_at)
       VALUES (${id}, 'mcp', ${name}, 1, ${JSON.stringify(spec)}, NULL, ${Date.now()})`;
     await this.#reconcileNow();
-    return { ok: true, value: { id, authorize } };
+    return { ok: true, value: { id, authorizeUrl } };
   }
 
   async #addSkill(markdown: string, origin: SkillOrigin): Promise<Outcome<Added>> {
@@ -286,12 +272,12 @@ export class PluginBook {
     this.agent.sql`INSERT INTO plugins (id, kind, name, enabled, spec, catalog, created_at)
       VALUES (${id}, 'skill', ${doc.name}, 1, ${JSON.stringify(spec)}, NULL, ${Date.now()})`;
     await this.#reconcileNow();
-    return { ok: true, value: { id, authorize: null } };
+    return { ok: true, value: { id, authorizeUrl: null } };
   }
 
   async #refreshSkill(row: Extract<PluginRecord, { kind: "skill" }>): Promise<Outcome<Added>> {
     const origin = row.spec.origin;
-    if (origin.type !== "url") return { ok: true, value: { id: row.id, authorize: null } };
+    if (origin.type !== "url") return { ok: true, value: { id: row.id, authorizeUrl: null } };
     const fetched = await fetchSkillMarkdown(origin.url);
     if (!fetched.ok) return fetched;
     const parsed = parseSkillDoc(fetched.value);
@@ -301,7 +287,7 @@ export class PluginBook {
     }
     const spec: SkillSpec = { doc: parsed.value, origin: { ...origin, fetchedAt: Date.now() } };
     this.agent.sql`UPDATE plugins SET spec = ${JSON.stringify(spec)} WHERE id = ${row.id}`;
-    return { ok: true, value: { id: row.id, authorize: null } };
+    return { ok: true, value: { id: row.id, authorizeUrl: null } };
   }
 
   async #refreshMcp(row: McpRecord, callbackHost: string | undefined): Promise<Outcome<Added>> {
@@ -311,28 +297,27 @@ export class PluginBook {
     try {
       if (state === "ready") {
         await this.agent.mcp.discoverIfConnected(row.id);
-        return { ok: true, value: { id: row.id, authorize: null } };
+        return { ok: true, value: { id: row.id, authorizeUrl: null } };
       }
       if (state === "authenticating") {
         const again = await this.agent.addMcpServer(row.name, server.server_url, {
           id: row.id,
           ...(callbackHost === undefined ? {} : { callbackHost }),
         });
-        return { ok: true, value: { id: row.id, authorize: again.state === "authenticating" ? again.authUrl : null } };
+        return { ok: true, value: { id: row.id, authorizeUrl: again.state === "authenticating" ? again.authUrl : null } };
       }
       const connected = await this.agent.mcp.connectToServer(row.id);
       if (connected.state === "authenticating") {
-        return { ok: true, value: { id: row.id, authorize: connected.authUrl } };
+        return { ok: true, value: { id: row.id, authorizeUrl: connected.authUrl } };
       }
       if (connected.state === "failed") return { ok: false, error: scrubUrl(connected.error, server.server_url) };
       await this.agent.mcp.discoverIfConnected(row.id);
-      return { ok: true, value: { id: row.id, authorize: null } };
+      return { ok: true, value: { id: row.id, authorizeUrl: null } };
     } catch (error) {
       return { ok: false, error: scrubUrl(messageOf(error), server.server_url) };
     }
   }
 
-  /** Refresh catalogs of ready servers (written only when the fingerprint changed), apply, publish. */
   async #reconcileNow(): Promise<void> {
     const servers = this.serverStates().servers;
     const rows: PluginRecord[] = [];
@@ -369,7 +354,7 @@ export class PluginBook {
       const state = mcp.mcpConnections[row.id]?.connectionState;
       if (state !== "ready") return { failure: `MCP server ${row.name} is ${state ?? "not connected"}` };
       try {
-        return (await mcp.callTool({ serverId: row.id, name: toolName, arguments: args }, { signal })) as RawMcpResult;
+        return await mcp.callTool({ serverId: row.id, name: toolName, arguments: args }, { signal });
       } catch (error) {
         if (signal?.aborted) throw error;
         return { failure: `MCP server ${row.name} failed to run ${toolName}: ${messageOf(error)}` };
@@ -402,20 +387,18 @@ export class PluginBook {
     });
   }
 
-  /** The id doubles as the SDK server id and the `mcp-<id>` section key, so it must stay a plain slug. */
   #freeId(name: string, rows: readonly PluginRecord[]): string {
     const taken = new Set([...rows.map((row) => row.id), ...this.agent.mcp.listServers().map((server) => server.id)]);
-    const base = normalizeServerId(name).slice(0, 41).replace(/[-_]+$/, "");
+    const base = normalizeServerId(name).slice(0, PLUGIN_ID_MAX_LENGTH).replace(/[-_]+$/, "");
     let id = PLUGIN_ID.test(base) ? base : "plugin";
     for (let n = 2; taken.has(id); n++) {
       const suffix = `-${n}`;
-      id = `${base.slice(0, 41 - suffix.length).replace(/[-_]+$/, "")}${suffix}`;
+      id = `${base.slice(0, PLUGIN_ID_MAX_LENGTH - suffix.length).replace(/[-_]+$/, "")}${suffix}`;
     }
     return id;
   }
 }
 
-/** Enabled rows → extensions: `mcp.<id>` per server with a catalog, one `agents.skills` for all skills. */
 export async function desired(rows: readonly PluginRecord[], callFor: (row: McpRecord) => McpCall): Promise<Desired> {
   const want = new Map<string, DesiredExtension>();
   const skills: SkillDoc[] = [];
@@ -438,7 +421,6 @@ export async function desired(rows: readonly PluginRecord[], callFor: (row: McpR
   return want;
 }
 
-/** Same-name install replaces in place; identical fingerprints are skipped so pi records no tool churn. */
 export async function applyDiff(registry: Registry<ToolRegistration>, installed: Installed, want: Desired): Promise<void> {
   for (const [name, { fingerprint, build }] of want) {
     if (installed.get(name)?.fingerprint === fingerprint) continue;
@@ -459,7 +441,6 @@ function currentOrigin(): string | undefined {
   return uri ? new URL(uri).origin : undefined;
 }
 
-/** SDK errors quote the server URL; its query string may carry a key and must not reach the browser. */
 function scrubUrl(text: string, rawUrl: string): string {
   let url: URL;
   try {

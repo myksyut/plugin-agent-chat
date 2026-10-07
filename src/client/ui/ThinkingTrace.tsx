@@ -1,7 +1,6 @@
 import { NavArrowDown, Sparks } from "iconoir-react";
 import { useLayoutEffect, useRef, useState } from "react";
 
-/** Reasoning trace: expands on its own while the model is thinking, settles when done; the reader can override. */
 export function ThinkingTrace({ text, working }: { text: string; working: boolean }) {
   const [manual, setManual] = useState<boolean | null>(null);
   const expanded = manual ?? working;

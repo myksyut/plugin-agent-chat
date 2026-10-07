@@ -44,7 +44,7 @@ function NoticeLine({ notice }: { notice: Notice }) {
 }
 
 function addedNotice(added: Added, done: string): Notice {
-  return added.authorize ? { kind: "authorize", url: added.authorize } : { kind: "info", text: done };
+  return added.authorizeUrl ? { kind: "authorize", url: added.authorizeUrl } : { kind: "info", text: done };
 }
 
 function Switch({ checked, label, onChange }: { checked: boolean; label: string; onChange(next: boolean): void }) {
@@ -127,7 +127,7 @@ function PluginDetail({ plugin }: { plugin: PluginView }) {
   }
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="font-mono text-[11.5px] break-all text-ink-3">{plugin.url}</span>
+      <span className="font-mono text-[11.5px] break-all text-ink-3">{plugin.displayUrl}</span>
       {plugin.headerNames.length > 0 && (
         <span className="text-[12px] text-ink-3">Headers: {plugin.headerNames.join(", ")} (values hidden)</span>
       )}
@@ -199,7 +199,7 @@ function PluginRow({ plugin, index, actions }: { plugin: PluginView; index: numb
           type="button"
           aria-label={`Refresh ${plugin.name}`}
           disabled={busy}
-          onClick={() => void act(() => actions.refreshPlugin(plugin.id), (added) => (added.authorize ? addedNotice(added, "") : null))}
+          onClick={() => void act(() => actions.refreshPlugin(plugin.id), (added) => (added.authorizeUrl ? addedNotice(added, "") : null))}
           className="primitive-icon-button text-ink-3 transition-colors duration-100 hover:bg-hover-2 hover:text-ink disabled:opacity-50"
         >
           <Refresh width={15} height={15} style={busy ? { animation: "spin 1.1s linear infinite" } : undefined} />
@@ -467,7 +467,6 @@ function AddPlugin({ actions }: { actions: WorkspaceActions }) {
   );
 }
 
-/** Plugin list (state, tool count, enable, refresh, remove) and the add forms. */
 export function PluginsPanel({ plugins, actions }: { plugins: readonly PluginView[]; actions: WorkspaceActions }) {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">

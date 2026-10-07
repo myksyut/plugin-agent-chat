@@ -1,7 +1,5 @@
-// Who is calling. The only place that knows about Cloudflare Access.
 
 export type Identity = {
-  /** DO instance name: "u-" + hex(sha256(iss + "|" + sub)).slice(0, 32). Never an email. */
   readonly agentName: string;
   readonly email: string | null;
 };
@@ -19,14 +17,8 @@ type AccessClaims = {
   readonly email?: unknown;
 };
 
-/** Signing keys by kid, per team domain; refetched when a token names an unknown kid. */
 const jwksCache = new Map<string, Map<string, CryptoKey>>();
 
-/**
- * access: verifies the Cf-Access-Jwt-Assertion header (or the CF_Authorization cookie):
- * RS256 against the team's JWKS, aud includes ACCESS_AUD, iss is the team, exp/nbf hold.
- * dev: the fixed local identity. Anything else, or any failure: null.
- */
 export async function resolveIdentity(request: Request, env: IdentityEnv): Promise<Identity | null> {
   if (env.AUTH_MODE === "dev") return DEV_IDENTITY;
   if (env.AUTH_MODE !== "access" || !env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD) return null;

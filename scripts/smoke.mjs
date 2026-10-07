@@ -122,7 +122,7 @@ if (!afterRestart) {
       headers: [{ name: "X-Smoke-Token", value: SECRET_HEADER }],
     },
   ]);
-  check(mcp.ok && mcp.value.authorize === null, "public MCP plugin added without OAuth", mcp);
+  check(mcp.ok && mcp.value.authorizeUrl === null, "public MCP plugin added without OAuth", mcp);
 
   const dup = await client.call("addPlugin", [{ kind: "mcp", name: "cfdocs", url: "https://mcp.deepwiki.com/mcp", headers: [] }]);
   check(!dup.ok, "duplicate MCP plugin name is rejected", dup);
@@ -131,7 +131,7 @@ if (!afterRestart) {
 await waitFor(() => plugin("cfdocs")?.connection.state === "ready" && plugin("cfdocs").tools.length > 0, "cfdocs ready", 60_000);
 check(true, "cfdocs is ready with a tool catalog");
 check(plugin("cfdocs").headerNames.includes("X-Smoke-Token"), "header name is shown", plugin("cfdocs"));
-check(!plugin("cfdocs").url.includes("?"), "plugin URL is shown without its query string", plugin("cfdocs").url);
+check(!plugin("cfdocs").displayUrl.includes("?"), "plugin URL is shown without its query string", plugin("cfdocs").displayUrl);
 check(plugin("smoke-secret")?.enabled === true, "skill plugin is enabled", plugin("smoke-secret"));
 
 let session;
@@ -144,7 +144,8 @@ if (afterRestart) {
   check(view.turns.some((t) => t.kind === "user") && view.turns.some((t) => t.kind === "assistant"), "history is restored after restart", view.turns.length);
 } else {
   const created = await client.call("newConversation", []);
-  session = created.id;
+  check(created.ok, "newConversation succeeds", created);
+  session = created.value.id;
   const opened = await client.call("openConversation", [session]);
   check(opened.ok, "openConversation succeeds", opened);
   await waitFor(() => view && view.session === session, "full frame for new conversation");

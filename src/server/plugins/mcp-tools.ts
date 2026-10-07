@@ -1,10 +1,9 @@
-// Pure MCP → pi adaptation. Holds no SDK objects: the caller supplies an McpCall.
 import type { TSchema } from "@earendil-works/pi-ai";
 import type { Extension, ToolExecutionResult, ToolRegistration } from "@earendil-works/pi-durable";
+import type { CallToolResult } from "@modelcontextprotocol/client";
 
 export type JsonSchemaObject = { readonly [key: string]: unknown };
 
-/** Shape of what `this.mcp.listTools()` yields (structural). */
 export type RawMcpTool = {
   readonly name: string;
   readonly title?: string;
@@ -13,9 +12,7 @@ export type RawMcpTool = {
 };
 
 export type McpToolSpec = {
-  /** Original MCP tool name, sent to callTool. */
   readonly name: string;
-  /** Model-facing: `<pluginId>__<sanitized>`, [A-Za-z0-9_-], at most 64, collision-suffixed. */
   readonly modelName: string;
   readonly description: string;
   readonly inputSchema: JsonSchemaObject;
@@ -24,32 +21,16 @@ export type McpToolSpec = {
 export type McpCatalog = {
   readonly instructions: string | null;
   readonly tools: readonly McpToolSpec[];
-  /** Hash of tools + instructions; equal fingerprint means the installed extension is current. */
   readonly fingerprint: string;
 };
 
-/** The MCP content blocks this adapter maps; everything else is passed on as JSON text. */
-export type McpContentBlock =
-  | { readonly type: "text"; readonly text: string }
-  | { readonly type: "image"; readonly data: string; readonly mimeType: string }
-  | { readonly type: "resource"; readonly resource: { readonly text?: string } }
-  | { readonly type: "audio" | "resource_link" };
-
-export type RawMcpResult = {
-  readonly content?: readonly McpContentBlock[];
-  readonly structuredContent?: unknown;
-  readonly isError?: boolean;
-};
-
-/** A controlled tool error the model can reason about: server not ready, or the call failed. */
 export type McpFailure = { readonly failure: string };
 
-/** Calls one tool on one server; the caller guards the connection state. */
 export type McpCall = (
   toolName: string,
   args: Record<string, unknown>,
   signal: AbortSignal | undefined,
-) => Promise<RawMcpResult | McpFailure>;
+) => Promise<CallToolResult | McpFailure>;
 
 const MAX_TOOL_NAME = 64;
 const PERMISSIVE_SCHEMA: JsonSchemaObject = { type: "object", additionalProperties: true };
@@ -116,10 +97,7 @@ function pointerResolves(root: JsonSchemaObject, ref: string): boolean {
   return true;
 }
 
-/**
- * Extension `mcp.<id>`: one tool per catalog entry, plus a tagged `mcp-<id>` section carrying
- * the server's instructions. Replay stays "unsafe": server annotations are not trusted.
- */
+/** Replay stays "unsafe": server annotations are not trusted. */
 export function mcpExtension(
   plugin: { readonly id: string; readonly name: string },
   catalog: McpCatalog,
@@ -129,7 +107,7 @@ export function mcpExtension(
     (spec): ToolRegistration => ({
       name: spec.modelName,
       description: spec.description,
-      parameters: spec.inputSchema as unknown as TSchema,
+      parameters: spec.inputSchema,
       replay: "unsafe",
       async execute(args, _api, context) {
         return toPiResult(await call(spec.name, (args ?? {}) as Record<string, unknown>, context.abortSignal));
@@ -149,8 +127,12 @@ export function mcpExtensionName(pluginId: string): string {
 
 type PiContent = NonNullable<ToolExecutionResult["content"]>[number];
 
-export function toPiResult(result: RawMcpResult | McpFailure): ToolExecutionResult {
-  if ("failure" in result) {
+function isFailure(result: CallToolResult | McpFailure): result is McpFailure {
+  return typeof result.failure === "string";
+}
+
+export function toPiResult(result: CallToolResult | McpFailure): ToolExecutionResult {
+  if (isFailure(result)) {
     return { isError: true, content: [{ type: "text", text: result.failure }] };
   }
   const content = (result.content ?? []).map((block): PiContent => {
@@ -160,7 +142,7 @@ export function toPiResult(result: RawMcpResult | McpFailure): ToolExecutionResu
       case "image":
         return { type: "image", data: block.data, mimeType: block.mimeType };
       case "resource":
-        return { type: "text", text: block.resource.text ?? JSON.stringify(block) };
+        return { type: "text", text: "text" in block.resource ? block.resource.text : JSON.stringify(block) };
       default:
         return { type: "text", text: JSON.stringify(block) };
     }

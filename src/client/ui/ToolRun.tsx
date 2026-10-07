@@ -96,7 +96,6 @@ function ToolRow({ call }: { call: ToolCallView }) {
   );
 }
 
-/** Consecutive tool calls of one assistant turn, collapsible under an "N tool calls" header. */
 export function ToolRun({ calls }: { calls: readonly ToolCallView[] }) {
   const [open, setOpen] = useState(true);
   return (

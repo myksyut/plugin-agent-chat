@@ -1,5 +1,3 @@
-// The browser's single entry point to the user's agent: identity, agent state,
-// the folded chat view of the open conversation, and the callable actions.
 import { useAgent } from "agents/react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
@@ -23,7 +21,7 @@ export type WorkspaceActions = {
   send(text: string): Promise<Outcome<{ accepted: boolean }>>;
   abort(): Promise<void>;
   open(session: SessionId): Promise<void>;
-  newConversation(): Promise<void>;
+  newConversation(): Promise<Outcome<null>>;
   addPlugin(draft: PluginDraft): Promise<Outcome<Added>>;
   setPluginEnabled(id: string, enabled: boolean): Promise<Outcome<null>>;
   removePlugin(id: string): Promise<Outcome<null>>;
@@ -37,10 +35,8 @@ export type Workspace =
       readonly status: "ready";
       readonly state: AppState;
       readonly session: SessionId;
-      /** null until the first frame for `session` arrives. */
       readonly chat: ChatView | null;
       readonly panel: Panel;
-      /** false while the socket is down and reconnecting. */
       readonly online: boolean;
       readonly actions: WorkspaceActions;
     };
@@ -138,12 +134,10 @@ export function useWorkspace(me: Me): Workspace {
       },
       open: openSession,
       newConversation: async () => {
-        try {
-          const info = (await callRef.current("newConversation", [])) as ConversationInfo;
-          await openSession(info.id);
-        } catch {
-          // The sidebar stays on the current conversation; nothing else to reconcile.
-        }
+        const created = await invoke<ConversationInfo>("newConversation", []);
+        if (!created.ok) return created;
+        await openSession(created.value.id);
+        return { ok: true, value: null };
       },
       addPlugin: (draft) => invoke<Added>("addPlugin", [draft]),
       setPluginEnabled: (id, enabled) => invoke<null>("setPluginEnabled", [id, enabled]),

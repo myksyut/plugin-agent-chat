@@ -7,7 +7,6 @@ type GlideMenuProps = {
   rowSelector?: string;
 };
 
-/** A single hover layer that glides between interactive menu rows. */
 export function GlideMenu({
   children,
   className = "",

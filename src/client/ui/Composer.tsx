@@ -3,7 +3,6 @@ import { ACCENTS, accentChain, createShader, playSweep } from "glimm";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { PluginView, RunStatus } from "../../shared/protocol";
 
-/* The built-in palette reads blue/purple; build a true full-spectrum rainbow. */
 const RAINBOW = accentChain([
   ACCENTS.red,
   ACCENTS.orange,
@@ -22,7 +21,6 @@ type MenuRow =
   | { readonly key: string; readonly type: "skill"; readonly name: string; readonly desc: string }
   | { readonly key: string; readonly type: "plugin"; readonly plugin: PluginView };
 
-/* the last @word or /word being typed, if any */
 function parseToken(draft: string): Menu | null {
   const match = /(^|\s)([@/])([\w-]*)$/.exec(draft);
   if (!match) return null;
@@ -89,7 +87,6 @@ export function Composer({
     setEngaged(false);
   }, [token?.kind, token?.query]);
 
-  /* a single highlight glides to the active row instead of each row toggling its own background */
   useLayoutEffect(() => {
     const target = rowRefs.current[active];
     if (target) setRowBox({ top: target.offsetTop, height: target.offsetHeight });
@@ -140,7 +137,6 @@ export function Composer({
     });
   };
 
-  /* grow with content up to a compact maximum */
   useLayoutEffect(() => {
     const input = inputRef.current;
     if (!input) return;

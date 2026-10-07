@@ -1,4 +1,3 @@
-// The Worker: identity and routing only.
 import { routeAgentRequest } from "agents";
 import { Hono } from "hono";
 import type { Me } from "../shared/protocol";
@@ -21,13 +20,7 @@ app.get("/api/me", (c) => {
   return c.json({ agentName: identity.agentName, email: identity.email } satisfies Me);
 });
 
-/**
- * Guards WebSocket upgrades, HTTP RPC, and the SDK's MCP OAuth callback
- * (/agents/user-agent/<name>/callback). A browser Origin must be this host, which blocks
- * cross-site WebSocket hijacking with the Access cookie; the recomputed identity must own the name.
- * Hosts are compared without the scheme because a TLS-terminating proxy (vite dev over https)
- * hands the Worker an http:// URL.
- */
+/** Compare hosts, not origins: behind a TLS-terminating proxy such as vite dev over https the Worker sees an http:// URL. */
 async function guard(request: Request, route: { readonly name: string }, env: Env): Promise<Response | undefined> {
   const origin = request.headers.get("Origin");
   const originHost = origin !== null && URL.canParse(origin) ? new URL(origin).host : null;

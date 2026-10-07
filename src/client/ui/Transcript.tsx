@@ -9,7 +9,6 @@ type Block =
   | { readonly kind: "thinking"; readonly text: string; readonly last: boolean }
   | { readonly kind: "tools"; readonly calls: readonly ToolCallView[]; readonly last: boolean };
 
-/** Folds consecutive tool parts into one run; everything else maps 1:1. */
 function toBlocks(parts: readonly Part[]): Block[] {
   const blocks: Block[] = [];
   for (const part of parts) {
@@ -79,7 +78,6 @@ function TurnView({ turn }: { turn: Turn }) {
 
 const STICK_THRESHOLD_PX = 48;
 
-/** Scrolling thread; follows the bottom while the reader has not scrolled away. */
 export function Transcript({ view }: { view: ChatView | null }) {
   const scroller = useRef<HTMLDivElement>(null);
   const stuck = useRef(true);

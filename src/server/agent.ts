@@ -1,4 +1,3 @@
-// The per-user Durable Object: wiring, lifecycle hooks, and one-line @callable adapters.
 import { createModels } from "@earendil-works/pi-ai/models";
 import { createRegistry, Harness } from "@earendil-works/pi-durable";
 import { Agent, callable, getCurrentAgent, type Connection, type MCPServersState } from "agents";
@@ -16,7 +15,6 @@ import type {
 import { ChatHub } from "./chat/hub";
 import { PluginBook } from "./plugins/book";
 
-/** Per-connection hibernation attachment: the conversation this socket views. */
 export type ViewerState = { readonly session: SessionId };
 
 export class UserAgent extends Agent<Env, AppState> {
@@ -48,12 +46,11 @@ export class UserAgent extends Agent<Env, AppState> {
     this.lifecycle.use(this.harness);
   }
 
-  /** Every isolate start: cold start, hibernation wake, or a pi wake alarm. */
   async onStart(): Promise<void> {
     this.mcp.configureOAuthCallback({ customHandler: oauthResultPage });
     await this.hub.resume();
     this.mcp.onServerStateChanged(() => void this.book.reconcile());
-    await this.book.sweep();
+    await this.book.deleteOrphans();
   }
 
   async onClose(connection: Connection): Promise<void> {
@@ -79,7 +76,7 @@ export class UserAgent extends Agent<Env, AppState> {
   }
 
   @callable()
-  newConversation(): Promise<ConversationInfo> {
+  newConversation(): Promise<Outcome<ConversationInfo>> {
     return this.hub.create(viewer());
   }
 
@@ -108,7 +105,6 @@ export class UserAgent extends Agent<Env, AppState> {
     return this.book.remove(id);
   }
 
-  /** skill-url: re-fetch; mcp: reconnect, or return a fresh authorize URL. */
   @callable()
   refreshPlugin(id: string): Promise<Outcome<Added>> {
     return this.book.refresh(id);

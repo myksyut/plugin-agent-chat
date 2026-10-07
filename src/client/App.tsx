@@ -63,9 +63,10 @@ function Workspace({ me }: { me: Me }) {
           panel={panel}
           pluginCount={state.plugins.length}
           email={me.email}
-          onNew={() => {
+          onNew={async () => {
             setSendError(null);
-            void actions.newConversation();
+            const result = await actions.newConversation();
+            if (!result.ok) setSendError(result.error);
           }}
           onPick={(id) => {
             setSendError(null);
