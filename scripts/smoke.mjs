@@ -1,6 +1,8 @@
 // End-to-end smoke against a running dev server (AUTH_MODE=dev).
 //   node scripts/smoke.mjs                 fresh run: registers plugins, chats, checks secrets
 //   node scripts/smoke.mjs --after-restart  run after restarting the dev server: checks persistence
+// SMOKE_CHATGPT_CRED=<path> imports that ChatGPT credential file when the plan is not connected yet.
+import { readFileSync } from "node:fs";
 import { AgentClient } from "agents/client";
 
 const host = process.env.HOST ?? "127.0.0.1:5173";
@@ -71,7 +73,22 @@ client.addEventListener("message", (event) => {
 });
 await client.ready;
 await waitFor(() => state, "initial state");
-check(typeof state.model === "string" && state.model.length > 0, "state carries the model id", state.model);
+
+const credentialPath = process.env.SMOKE_CHATGPT_CRED;
+const credential = credentialPath ? JSON.parse(readFileSync(credentialPath, "utf8")) : null;
+if (state.chatgpt.state !== "connected" && credential) {
+  const imported = await client.call("importChatGPTCredential", [credential]);
+  check(imported.ok, "ChatGPT credential import succeeds", imported);
+  await waitFor(() => state.chatgpt.state === "connected", "ChatGPT connected state", 30_000).catch(() => undefined);
+}
+const chatgpt = state.chatgpt;
+check(
+  chatgpt.state === "connected" && chatgpt.models.length > 0 && chatgpt.models.includes(chatgpt.model),
+  "ChatGPT plan is connected with a model list and a chosen model",
+  chatgpt,
+);
+const badModel = await client.call("setModel", ["not-a-model"]);
+check(!badModel.ok, "setModel rejects a model the plan does not offer", badModel);
 
 const plugin = (name) => state.plugins.find((p) => p.name === name);
 const lastAssistantText = () =>
@@ -168,6 +185,11 @@ check(lastAssistantText().includes(SKILL_CODE), "skill content reached the model
 
 const leaked = rawFrames.filter((f) => f.includes(SECRET_HEADER) || f.includes(SECRET_QUERY));
 check(leaked.length === 0, "no frame sent to the browser carries the MCP header value or URL query", leaked[0]);
+if (credential) {
+  const tokens = [credential.access, credential.refresh];
+  const tokenFrames = rawFrames.filter((f) => tokens.some((token) => f.includes(token))).length;
+  check(tokenFrames === 0, "no frame sent to the browser carries the ChatGPT access or refresh token", `${tokenFrames} frames`);
+}
 
 const failed = checks.filter((c) => !c.ok).length;
 console.log(`\n${checks.length - failed}/${checks.length} checks passed`);
