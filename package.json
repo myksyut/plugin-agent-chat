@@ -10,17 +10,22 @@
     "preview": "vite build && vite preview",
     "deploy": "vite build && wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "types": "wrangler types env.d.ts --include-runtime false"
+    "types": "wrangler types env.d.ts --include-runtime false --strict-vars false",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-ai": "^1.0.4",
     "@earendil-works/pi-durable": "^1.0.4",
+    "@modelcontextprotocol/client": "2.0.0",
     "agents": "0.26.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "glimm": "^0.3.1",
     "hono": "^4.13.13",
     "iconoir-react": "^7.12.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "shadow-plugin": "^2.1.1",
     "streamdown": "^2.7.0",
     "typebox": "^1.3.35"
   },

@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "plugin-agent-chat",
+  "main": "src/server/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/agents/*", "/api/*"]
+  },
+  "ai": { "binding": "AI", "remote": true },
+  "vars": {
+    "MODEL_ID": "@cf/zai-org/glm-4.7-flash",
+    "AUTH_MODE": "access",
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": ""
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "UserAgent", "class_name": "UserAgent" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["UserAgent"] }],
+  "observability": { "enabled": true }
+}
