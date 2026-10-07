@@ -23,12 +23,15 @@ app.get("/api/me", (c) => {
 
 /**
  * Guards WebSocket upgrades, HTTP RPC, and the SDK's MCP OAuth callback
- * (/agents/user-agent/<name>/callback). A browser Origin must be this site, which blocks
+ * (/agents/user-agent/<name>/callback). A browser Origin must be this host, which blocks
  * cross-site WebSocket hijacking with the Access cookie; the recomputed identity must own the name.
+ * Hosts are compared without the scheme because a TLS-terminating proxy (vite dev over https)
+ * hands the Worker an http:// URL.
  */
 async function guard(request: Request, route: { readonly name: string }, env: Env): Promise<Response | undefined> {
   const origin = request.headers.get("Origin");
-  if (origin !== null && origin !== new URL(request.url).origin) return new Response("Forbidden", { status: 403 });
+  const originHost = origin !== null && URL.canParse(origin) ? new URL(origin).host : null;
+  if (origin !== null && originHost !== new URL(request.url).host) return new Response("Forbidden", { status: 403 });
   const identity = await resolveIdentity(request, env);
   if (identity === null) return new Response("Unauthenticated", { status: 401 });
   if (identity.agentName !== route.name) return new Response("Forbidden", { status: 403 });
